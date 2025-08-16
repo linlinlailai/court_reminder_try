@@ -1266,39 +1266,41 @@
         }
     }
 
-    // 載入 Firebase 數據
+    // === 修正：載入 Firebase 數據並正確計算總通知次數 ===
     async function loadFirebaseData() {
         try {
             const { ref, get } = await import('https://www.gstatic.com/firebasejs/9.22.0/firebase-database.js');
             const statsRef = ref(database, 'statistics');
-            const snapshot = await get(statsRef);
+            const remindersRef = ref(database, 'court_reminders');
             
-            if (snapshot.exists()) {
-                const stats = snapshot.val();
-                updateDashboard(stats);
-            } else {
-                updateDashboard({});
-            }
+            const [statsSnapshot, remindersSnapshot] = await Promise.all([get(statsRef), get(remindersRef)]);
+            
+            const stats = statsSnapshot.exists() ? statsSnapshot.val() : {};
+            const reminders = remindersSnapshot.exists() ? remindersSnapshot.val() : {};
+            
+            updateDashboard(stats, reminders);
         } catch (error) {
             console.error('載入 Firebase 數據失敗:', error);
             loadLocalData();
         }
     }
 
-    // 載入本地數據
+    // === 修正：載入本地數據並正確計算總通知次數 ===
     function loadLocalData() {
         try {
             const stats = JSON.parse(localStorage.getItem('courtStatistics') || '{}');
-            updateDashboard(stats);
+            const reminders = JSON.parse(localStorage.getItem('courtReminders') || '{}');
+            updateDashboard(stats, reminders);
         } catch (error) {
             console.error('載入本地數據失敗:', error);
-            updateDashboard({});
+            updateDashboard({}, {});
         }
     }
 
-    // 更新儀表板顯示
-    function updateDashboard(stats) {
-        const totalNotifications = Object.values(stats).reduce((sum, player) => sum + (player.count || 0), 0);
+    // === 修正：更新儀表板顯示，正確計算總通知次數 ===
+    function updateDashboard(stats, reminders) {
+        // 總通知次數 = 有產生通知的天數（court_reminders 的鍵值數量）
+        const totalNotifications = Object.keys(reminders).length;
         const activeParticipants = Object.keys(stats).length;
         
         document.getElementById('totalNotifications').textContent = totalNotifications;
@@ -1383,7 +1385,7 @@
         localStorage.removeItem('courtReminders');
         localStorage.removeItem('courtStatistics');
 
-        updateDashboard({});
+        updateDashboard({}, {});
         showSuccessMessage('本地統計資料已清除');
     }
 
