@@ -932,11 +932,11 @@
 
     <script>
     // Firebase 設定
-        const firebaseConfig = {
-            apiKey: "AIzaSyCVOPme4I2DqEu6OGen7D_qVQgpEnT6R7E",
-            authDomain: "court-test-e7de7.firebaseapp.com",
-            databaseURL: "https://court-test-e7de7-default-rtdb.asia-southeast1.firebasedatabase.app",
-            projectId: "court-test-e7de7"
+    const firebaseConfig = {
+        apiKey: "AIzaSyCVOPme4I2DqEu6OGen7D_qVQgpEnT6R7E",
+        authDomain: "court-test-e7de7.firebaseapp.com",
+        databaseURL: "https://court-test-e7de7-default-rtdb.asia-southeast1.firebasedatabase.app",
+        projectId: "court-test-e7de7"
     };
 
     // 全域變數
@@ -1162,7 +1162,7 @@
         setTimeout(() => { messageDiv.style.display = "none"; }, 3000);
     }
 
-    // 更新統計數據的通用函式
+    // === 恢復原始的統計邏輯 ===
     function updateStatistics(stats, oldParticipants, newParticipants) {
         const oldSet = new Set(oldParticipants);
         const newSet = new Set(newParticipants);
@@ -1192,7 +1192,7 @@
         return stats;
     }
 
-    // 記錄打球數據 (Firebase)
+    // === 恢復原始的記錄打球數據邏輯 ===
     async function recordCourtData() {
         const today = new Date().toISOString().split('T')[0];
         const newParticipants = Object.values(assignments).flat();
@@ -1214,19 +1214,18 @@
 
                 const [courtSnapshot, statsSnapshot] = await Promise.all([get(courtRef), get(statsRef)]);
                 
-                const oldParticipants = courtSnapshot.exists() ? (courtSnapshot.val().participants || []) : [];
-                let stats = statsSnapshot.exists() ? statsSnapshot.val() : {};
+                const existingData = courtSnapshot.val();
+                const currentStats = statsSnapshot.val() || {};
+                
+                const oldParticipants = existingData ? existingData.participants : [];
+                const updatedStats = updateStatistics(currentStats, oldParticipants, newParticipants);
 
-                stats = updateStatistics(stats, oldParticipants, newParticipants);
-
-                await Promise.all([
-                    set(courtRef, data),
-                    set(statsRef, stats)
-                ]);
-
-                console.log('數據已成功記錄到 Firebase');
+                await set(courtRef, data);
+                await set(statsRef, updatedStats);
+                
+                loadDashboardData();
             } catch (error) {
-                console.error('記錄數據到 Firebase 失敗:', error);
+                console.error('Firebase 寫入失敗:', error);
                 recordLocalData(data);
             }
         } else {
@@ -1234,22 +1233,27 @@
         }
     }
 
-    // 記錄本地數據
+    // === 恢復原始的記錄本地數據邏輯 ===
     function recordLocalData(data) {
         try {
             const today = data.date;
-            const oldData = JSON.parse(localStorage.getItem(`court_reminder_${today}`) || '{}');
-            const oldParticipants = oldData.participants || [];
+            const newParticipants = data.participants;
+
+            const courtData = JSON.parse(localStorage.getItem('courtReminders') || '{}');
+            const stats = JSON.parse(localStorage.getItem('courtStatistics') || '{}');
+
+            const existingData = courtData[today];
+            const oldParticipants = existingData ? existingData.participants : [];
             
-            localStorage.setItem(`court_reminder_${today}`, JSON.stringify(data));
+            const updatedStats = updateStatistics(stats, oldParticipants, newParticipants);
 
-            let stats = JSON.parse(localStorage.getItem('court_statistics') || '{}');
-            stats = updateStatistics(stats, oldParticipants, data.participants);
-            localStorage.setItem('court_statistics', JSON.stringify(stats));
-
-            console.log('數據已記錄到本地儲存');
+            courtData[today] = data;
+            localStorage.setItem('courtReminders', JSON.stringify(courtData));
+            localStorage.setItem('courtStatistics', JSON.stringify(updatedStats));
+            
+            loadDashboardData();
         } catch (error) {
-            console.error('記錄本地數據失敗:', error);
+            console.error('本地儲存失敗:', error);
         }
     }
 
@@ -1284,7 +1288,7 @@
     // 載入本地數據
     function loadLocalData() {
         try {
-            const stats = JSON.parse(localStorage.getItem('court_statistics') || '{}');
+            const stats = JSON.parse(localStorage.getItem('courtStatistics') || '{}');
             updateDashboard(stats);
         } catch (error) {
             console.error('載入本地數據失敗:', error);
@@ -1376,11 +1380,8 @@
         }
 
         // 清除本地數據
-        Object.keys(localStorage).forEach(key => {
-            if (key.startsWith('court_reminder_') || key === 'court_statistics') {
-                localStorage.removeItem(key);
-            }
-        });
+        localStorage.removeItem('courtReminders');
+        localStorage.removeItem('courtStatistics');
 
         updateDashboard({});
         showSuccessMessage('本地統計資料已清除');
@@ -1675,7 +1676,7 @@
             // 移除遊戲結束狀態
             document.getElementById('scoreboard-page').classList.remove('game-ended');
             
-            // 重要：移除勝利者樣式 - 這是原本缺少的部分
+            // 重要：移除勝利者樣式
             document.getElementById('score-a').classList.remove('winner');
             document.getElementById('score-b').classList.remove('winner');
             
